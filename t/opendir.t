@@ -81,8 +81,8 @@ my @contents = readdir $sdh;
 closedir $sdh or die $!;
 is(
     [ sort @contents ],
-    [qw< . .. dest infoo source >],
-    'Symlink and directories appears in directory content'
+    [qw< . .. dest source >],
+    'Symlink and existing files appear in directory content (non-existent dir placeholders excluded)'
 );
 
 {
@@ -113,6 +113,23 @@ is(
     opendir my $dh, '/regdir' or die "opendir /regdir: $!";
     is( [ readdir($dh) ], [qw< . .. somefile >], 'readdir returns correct entries for dir with mocked children' );
     closedir $dh;
+}
+
+# Non-existent dir() placeholders should NOT appear in readdir.
+# dir() creates a placeholder with has_content=0. Only new_dir() (which
+# calls mkdir) or dirs with mocked children should appear.
+{
+    my $parent = Test::MockFile->dir('/pltest');
+    my $file   = Test::MockFile->file( '/pltest/real_file', 'data' );
+    my $subdir = Test::MockFile->dir('/pltest/ghost_dir');    # non-existent placeholder
+
+    mkdir '/pltest';
+
+    opendir my $dh, '/pltest' or die "opendir /pltest: $!";
+    my @entries = readdir($dh);
+    closedir $dh;
+
+    is( [ sort @entries ], [qw< . .. real_file >], 'Non-existent dir() placeholder excluded from readdir' );
 }
 
 done_testing();

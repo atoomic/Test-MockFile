@@ -1243,7 +1243,7 @@ sub contents {
             # Is this content within another directory? strip that out
             $basename =~ s{^( [^/]+ ) / .*}{$1}xms;
 
-            defined $_->{'contents'} || $_->is_link() || $_->is_dir() ? ($basename) : ();
+            defined $_->{'contents'} || $_->is_link() || ( $_->is_dir() && $_->{'has_content'} ) ? ($basename) : ();
         } _files_in_dir($dirname);
 
         my %uniq;
