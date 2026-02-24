@@ -1943,8 +1943,9 @@ sub __sysopen (*$$;$) {
       : $rd_wr_mode == O_RDWR   ? 'rw'
       :                           confess("Unexpected sysopen read/write mode ($rd_wr_mode)");    # O_WRONLY| O_RDWR mode makes no sense and we should die.
 
-    # If contents is undef, we act like the file isn't there.
-    if ( !defined $mock_file->{'contents'} && $rd_wr_mode == O_RDONLY ) {
+    # If contents is undef, the file doesn't exist. O_CREAT (handled above)
+    # is the only way to create it — without O_CREAT, any mode should ENOENT.
+    if ( !defined $mock_file->{'contents'} ) {
         $! = ENOENT;
         return;
     }

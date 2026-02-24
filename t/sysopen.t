@@ -12,7 +12,7 @@ use File::Slurper ();
 
 use Fcntl;
 
-#use Errno qw/ENOENT EBADF/;
+use Errno qw/ENOENT/;
 
 use Test::MockFile qw< nostrict >;    # Everything below this can have its open overridden.
 my ( undef, $filename ) = tempfile();
@@ -184,6 +184,46 @@ is( \%Test::MockFile::files_being_mocked, {}, "No mock files are in cache" ) or 
 }
 
 is( \%Test::MockFile::files_being_mocked, {}, "No mock files are in cache" );
+
+{
+    note "-------------- ENOENT on non-existent file without O_CREAT --------------";
+
+    my $nonexistent = '/tmp/sysopen_enoent_test';
+
+    {
+        note "O_RDONLY on non-existent file";
+        my $bar = Test::MockFile->file($nonexistent);
+        my $result = sysopen( my $fh, $nonexistent, O_RDONLY );
+        ok( !$result, "sysopen O_RDONLY fails on non-existent mock" );
+        is( $! + 0, Errno::ENOENT, "errno is ENOENT for O_RDONLY" );
+    }
+
+    {
+        note "O_WRONLY on non-existent file (no O_CREAT)";
+        my $bar = Test::MockFile->file($nonexistent);
+        my $result = sysopen( my $fh, $nonexistent, O_WRONLY );
+        ok( !$result, "sysopen O_WRONLY fails on non-existent mock without O_CREAT" );
+        is( $! + 0, Errno::ENOENT, "errno is ENOENT for O_WRONLY without O_CREAT" );
+    }
+
+    {
+        note "O_RDWR on non-existent file (no O_CREAT)";
+        my $bar = Test::MockFile->file($nonexistent);
+        my $result = sysopen( my $fh, $nonexistent, O_RDWR );
+        ok( !$result, "sysopen O_RDWR fails on non-existent mock without O_CREAT" );
+        is( $! + 0, Errno::ENOENT, "errno is ENOENT for O_RDWR without O_CREAT" );
+    }
+
+    {
+        note "O_WRONLY | O_CREAT on non-existent file (should succeed)";
+        my $bar = Test::MockFile->file($nonexistent);
+        is( sysopen( my $fh, $nonexistent, O_WRONLY | O_CREAT ), 1, "sysopen O_WRONLY|O_CREAT succeeds" );
+        is( syswrite( $fh, "test" ), 4, "Can write to created file" );
+        close $fh;
+        is( $bar->contents, "test", "Contents written correctly" );
+    }
+}
+is( \%Test::MockFile::files_being_mocked, {}, "No mock files are in cache" ) or die;
 
 done_testing();
 exit;
