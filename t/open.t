@@ -4,7 +4,7 @@ use strict;
 use warnings;
 
 use Test::More;
-use Errno qw/ENOENT/;
+use Errno qw/ENOENT ELOOP/;
 
 use File::Temp qw/tempfile/;
 
@@ -171,6 +171,32 @@ note "-------------- TWO-ARG OPEN WITH +>> MODE --------------";
     my @lines2 = <$fh2>;
     is_deeply( \@lines2, [ "existing\n", "appended\n" ], "Three-arg +>> reads same content" );
     close $fh2;
+}
+
+# open on a symlink to a non-existent target should fail with ENOENT
+{
+    my $broken_link = Test::MockFile->symlink( '/nonexistent_open_target', '/broken_open_symlink' );
+
+    ok( !open( my $fh, '<', '/broken_open_symlink' ), 'open on broken symlink fails' );
+    is( $! + 0, ENOENT, 'open on broken symlink sets ENOENT' );
+}
+
+# open on a circular symlink should fail with ELOOP
+{
+    my $loop_a = Test::MockFile->symlink( '/loop_open_b', '/loop_open_a' );
+    my $loop_b = Test::MockFile->symlink( '/loop_open_a', '/loop_open_b' );
+
+    ok( !open( my $fh, '<', '/loop_open_a' ), 'open on circular symlink fails' );
+    is( $! + 0, ELOOP, 'open on circular symlink sets ELOOP' );
+}
+
+# open for writing on a circular symlink should also fail with ELOOP
+{
+    my $loop_c = Test::MockFile->symlink( '/loop_wr_d', '/loop_wr_c' );
+    my $loop_d = Test::MockFile->symlink( '/loop_wr_c', '/loop_wr_d' );
+
+    ok( !open( my $fh, '>', '/loop_wr_c' ), 'open for write on circular symlink fails' );
+    is( $! + 0, ELOOP, 'open for write on circular symlink sets ELOOP' );
 }
 
 done_testing();
