@@ -1880,6 +1880,9 @@ sub __open (*;$@) {
     }
     elsif ( $mode eq '>' or $mode eq '+>' ) {
         $mock_file->{'contents'} = '';
+        my $now = time;
+        $mock_file->{'mtime'} = $now;
+        $mock_file->{'ctime'} = $now;
     }
 
     return 1;
@@ -1929,12 +1932,17 @@ sub __sysopen (*$$;$) {
     # O_CREAT
     if ( $sysopen_mode & O_CREAT && !defined $mock_file->{'contents'} ) {
         $mock_file->{'contents'} = '';
+        my $now = time;
+        $mock_file->{'mtime'} = $now;
+        $mock_file->{'ctime'} = $now;
     }
 
     # O_TRUNC
     if ( $sysopen_mode & O_TRUNC && defined $mock_file->{'contents'} ) {
         $mock_file->{'contents'} = '';
-
+        my $now = time;
+        $mock_file->{'mtime'} = $now;
+        $mock_file->{'ctime'} = $now;
     }
 
     my $rd_wr_mode = $sysopen_mode & 3;
@@ -2368,6 +2376,7 @@ sub __chown (@) {
 
         $mock->{'uid'} = $uid;
         $mock->{'gid'} = $gid;
+        $mock->{'ctime'} = time;
 
         $num_changed++;
     }
@@ -2423,6 +2432,7 @@ sub __chmod (@) {
         }
 
         $mock->{'mode'} = ( $mock->{'mode'} & S_IFMT ) + $mode;
+        $mock->{'ctime'} = time;
 
         $num_changed++;
     }

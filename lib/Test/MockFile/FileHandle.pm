@@ -113,7 +113,16 @@ sub PRINT {
         $self->{'data'}->{'contents'} .= $line;
     }
 
-    return length( $self->{'data'}->{'contents'} ) - $starting_bytes;
+    my $bytes_written = length( $self->{'data'}->{'contents'} ) - $starting_bytes;
+
+    # Update mtime and ctime on write, matching real filesystem behavior.
+    if ( $bytes_written > 0 ) {
+        my $now = time;
+        $self->{'data'}->{'mtime'} = $now;
+        $self->{'data'}->{'ctime'} = $now;
+    }
+
+    return $bytes_written;
 }
 
 =head2 PRINTF
@@ -211,6 +220,9 @@ sub READLINE {
 
     return if $self->EOF;
 
+    # Update atime on read, matching real filesystem behavior.
+    $self->{'data'}->{'atime'} = time if defined $self->{'data'};
+
     if (wantarray) {
         my @all;
         my $line = _READLINE_ONE_LINE($self);
@@ -272,6 +284,11 @@ sub READ {
     substr( $_[1], $offset ) = substr( $self->{'data'}->{'contents'}, $tell, $read_len );
 
     $self->{'tell'} += $read_len;
+
+    # Update atime on read, matching real filesystem behavior.
+    if ( $read_len > 0 ) {
+        $self->{'data'}->{'atime'} = time;
+    }
 
     return $read_len;
 }
