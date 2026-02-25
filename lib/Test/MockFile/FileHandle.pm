@@ -11,6 +11,7 @@ use strict;
 use warnings;
 use Errno qw/EBADF/;
 use Scalar::Util ();
+use Encode ();
 
 our $VERSION = '0.037';
 
@@ -64,20 +65,26 @@ See L<Test::MockFile> for more info.
 =cut
 
 sub TIEHANDLE {
-    my ( $class, $file, $mode ) = @_;
+    my ( $class, $file, $mode, $layers ) = @_;
 
     length $file or die("No file name passed!");
 
     my $self = bless {
-        'file'  => $file,
-        'data'  => $files_being_mocked->{$file},
-        'tell'  => 0,
-        'read'  => $mode =~ m/r/ ? 1 : 0,
-        'write' => $mode =~ m/w/ ? 1 : 0,
+        'file'   => $file,
+        'data'   => $files_being_mocked->{$file},
+        'tell'   => 0,
+        'read'   => $mode =~ m/r/ ? 1 : 0,
+        'write'  => $mode =~ m/w/ ? 1 : 0,
+        'layers' => [],
     }, $class;
 
     # This ref count can't hold the object from getting released.
     Scalar::Util::weaken( $self->{'data'} );
+
+    # Apply initial encoding layers if specified (e.g., from open mode ":utf8")
+    if ( defined $layers && length $layers ) {
+        $self->_apply_layers($layers);
+    }
 
     return $self;
 }
@@ -110,7 +117,8 @@ sub PRINT {
     my $starting_bytes = length $self->{'data'}->{'contents'};
     foreach my $line (@list) {
         next if !defined $line;
-        $self->{'data'}->{'contents'} .= $line;
+        my $encoded = $self->_encode_data($line);
+        $self->{'data'}->{'contents'} .= $encoded;
     }
 
     return length( $self->{'data'}->{'contents'} ) - $starting_bytes;
@@ -174,6 +182,7 @@ sub WRITE {
         $offset = $strlen + $offset;
     }
 
+    # Note: encoding is handled by PRINT via _encode_data
     return $self->PRINT( substr( $buf, $offset, $len ) );
 }
 
@@ -203,7 +212,7 @@ sub _READLINE_ONE_LINE {
     my $str = substr( $self->{'data'}->{'contents'}, $tell, $new_tell - $tell );
     $self->{'tell'} = $new_tell;
 
-    return $str;
+    return $self->_decode_data($str);
 }
 
 sub READLINE {
@@ -269,7 +278,8 @@ sub READ {
 
     my $read_len = ( $contents_len - $tell < $len ) ? $contents_len - $tell : $len;
 
-    substr( $_[1], $offset ) = substr( $self->{'data'}->{'contents'}, $tell, $read_len );
+    my $raw = substr( $self->{'data'}->{'contents'}, $tell, $read_len );
+    substr( $_[1], $offset ) = $self->_decode_data($raw);
 
     $self->{'tell'} += $read_len;
 
@@ -346,20 +356,111 @@ sub EOF {
 
 =head2 BINMODE
 
-Binmode does nothing as whatever format you put the data into the file as
-is how it will come out. Possibly we could decode the SV if this was done
-but then we'd have to do it every time contents are altered. Please open
-a ticket if you want this to do something.
-
-No L<perldoc
-documentation|http://perldoc.perl.org/perltie.html#Tying-FileHandles>
-exists on this method.
+Handles binmode() calls on tied filehandles.  When called with no
+arguments (or C<:raw>), removes all encoding layers.  When called with
+a layer specification like C<:utf8> or C<:encoding(UTF-8)>, applies that
+layer so that subsequent reads decode bytes to characters and writes
+encode characters to bytes.
 
 =cut
 
 sub BINMODE {
+    my ( $self, $layer ) = @_;
+
+    if ( !defined $layer || $layer eq '' ) {
+
+        # binmode($fh) with no args = :raw = remove all layers
+        $self->{'layers'} = [];
+        return 1;
+    }
+
+    return $self->_apply_layers($layer);
+}
+
+# Parse a layer string and update the layers list.
+# Handles :raw, :utf8, :bytes, :encoding(...), :crlf
+sub _apply_layers {
+    my ( $self, $layer_str ) = @_;
+
+    # Split on colons, filter empties
+    my @parts = grep { length $_ } split /:/, $layer_str;
+
+    for my $part (@parts) {
+        if ( $part eq 'raw' || $part eq 'bytes' ) {
+
+            # :raw / :bytes removes all layers
+            $self->{'layers'} = [];
+        }
+        elsif ( $part eq 'utf8' ) {
+            push @{ $self->{'layers'} }, ':utf8';
+        }
+        elsif ( $part =~ /^encoding\((.+)\)$/ ) {
+            my $enc = $1;
+            push @{ $self->{'layers'} }, ":encoding($enc)";
+        }
+        elsif ( $part eq 'crlf' ) {
+            push @{ $self->{'layers'} }, ':crlf';
+        }
+
+        # Other layers (e.g., :perlio, :stdio) are silently ignored
+    }
+
+    return 1;
+}
+
+# Returns the active encoding name (e.g., 'UTF-8') or undef if no
+# encoding layer is active.
+sub _active_encoding {
     my ($self) = @_;
-    return;
+
+    # Walk layers in reverse — last encoding wins
+    for my $layer ( reverse @{ $self->{'layers'} } ) {
+        if ( $layer eq ':utf8' ) {
+            return 'UTF-8';
+        }
+        elsif ( $layer =~ /^:encoding\((.+)\)$/ ) {
+            return $1;
+        }
+    }
+    return undef;
+}
+
+# Returns true if :crlf layer is active
+sub _crlf_active {
+    my ($self) = @_;
+    return scalar grep { $_ eq ':crlf' } @{ $self->{'layers'} };
+}
+
+# Decode bytes→characters for reading
+sub _decode_data {
+    my ( $self, $data ) = @_;
+
+    my $enc = $self->_active_encoding();
+    if ($enc) {
+        $data = Encode::decode( $enc, $data, Encode::FB_QUIET );
+    }
+
+    if ( $self->_crlf_active() ) {
+        $data =~ s/\r\n/\n/g;
+    }
+
+    return $data;
+}
+
+# Encode characters→bytes for writing
+sub _encode_data {
+    my ( $self, $data ) = @_;
+
+    if ( $self->_crlf_active() ) {
+        $data =~ s/\n/\r\n/g;
+    }
+
+    my $enc = $self->_active_encoding();
+    if ($enc) {
+        $data = Encode::encode( $enc, $data, Encode::FB_QUIET );
+    }
+
+    return $data;
 }
 
 =head2 OPEN

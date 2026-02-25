@@ -1820,7 +1820,7 @@ sub __open (*;$@) {
     confess() if $abs_path eq BROKEN_SYMLINK;
     my $mock_file = _get_file_object($abs_path);
 
-    # For now we're going to just strip off the binmode and hope for the best.
+    # Strip encoding layers from mode but preserve them for the tied handle.
     $mode =~ s/(:.+$)//;
     my $encoding_mode = $1;
 
@@ -1856,7 +1856,7 @@ sub __open (*;$@) {
     $rw .= 'w' if grep { $_ eq $mode } qw/+< +> +>> > >>/;
 
     my $filefh = IO::File->new;
-    tie *{$filefh}, 'Test::MockFile::FileHandle', $abs_path, $rw;
+    tie *{$filefh}, 'Test::MockFile::FileHandle', $abs_path, $rw, $encoding_mode;
 
     if ($likely_bareword) {
         my $caller = caller();
@@ -2490,6 +2490,26 @@ sub __utime (@) {
     return $num_changed;
 }
 
+# binmode FILEHANDLE
+# binmode FILEHANDLE, LAYER
+
+sub __binmode (*;$) {
+    my $fh    = $_[0];
+    my $layer = $_[1];
+
+    # Check if this filehandle is tied to our FileHandle class
+    my $tied = tied *{$fh};
+    if ( $tied && ref($tied) eq 'Test::MockFile::FileHandle' ) {
+        return $tied->BINMODE($layer);
+    }
+
+    # Not a mocked handle — pass through to real binmode
+    if ( defined $layer ) {
+        return CORE::binmode( $fh, $layer );
+    }
+    return CORE::binmode($fh);
+}
+
 BEGIN {
     *CORE::GLOBAL::glob = !$^V || $^V lt 5.18.0
       ? sub {
@@ -2513,8 +2533,9 @@ BEGIN {
     *CORE::GLOBAL::rmdir = \&__rmdir;
     *CORE::GLOBAL::chown = \&__chown;
     *CORE::GLOBAL::chmod = \&__chmod;
-    *CORE::GLOBAL::flock = \&__flock;
-    *CORE::GLOBAL::utime = \&__utime;
+    *CORE::GLOBAL::flock   = \&__flock;
+    *CORE::GLOBAL::utime   = \&__utime;
+    *CORE::GLOBAL::binmode = \&__binmode;
 }
 
 =head1 CAEATS AND LIMITATIONS
