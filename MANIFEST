@@ -20,6 +20,7 @@ t/file_access_hooks.t
 t/file_from_disk.t
 t/fileno.t
 t/flock.t
+t/glob_realfs.t
 t/globbing.t
 t/goto_is_available.t
 t/handle-corruption.t

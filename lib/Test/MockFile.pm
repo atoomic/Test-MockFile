@@ -26,6 +26,7 @@ BEGIN {
     $Carp::Internal{'Overload::FileCheck'}++;
 }
 use Cwd                        ();
+use File::Glob                 ();
 use IO::File                   ();
 use Test::MockFile::FileHandle ();
 use Test::MockFile::DirHandle  ();
@@ -1738,16 +1739,31 @@ sub __glob {
     # Text::Glob does not understand multiple patterns
     my @patterns = split /\s+/xms, $spec;
 
+    # Match against mocked files that exist
+    my @mocked_files = grep $files_being_mocked{$_}->exists(), keys %files_being_mocked;
     # Text::Glob does not accept directories in globbing
     # But csh (and thus, Perl) does, so we need to add them
-    my @mocked_files = grep $files_being_mocked{$_}->exists(), keys %files_being_mocked;
     @mocked_files = map /^(.+)\/[^\/]+$/xms ? ( $_, $1 ) : ($_), @mocked_files;
-
-    # Might as well be consistent
     @mocked_files = sort @mocked_files;
 
-    my @results = map Text::Glob::match_glob( $_, @mocked_files ), @patterns;
-    return @results;
+    my %seen;
+    my @results;
+
+    # Add mocked results first
+    for my $f ( map { Text::Glob::match_glob( $_, @mocked_files ) } @patterns ) {
+        next if $seen{$f}++;
+        push @results, $f;
+    }
+
+    # Fall through to real filesystem via File::Glob::bsd_glob
+    # (bypasses our CORE::GLOBAL::glob override)
+    for my $f ( map { File::Glob::bsd_glob($_) } @patterns ) {
+        next if $seen{$f}++;
+        next if exists $files_being_mocked{ _abs_path_to_file($f) };
+        push @results, $f;
+    }
+
+    return sort @results;
 }
 
 sub __open (*;$@) {
