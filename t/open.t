@@ -152,5 +152,26 @@ subtest(
     }
 );
 
+note "-------------- TWO-ARG OPEN WITH +>> MODE --------------";
+{
+    my $append_file = '/tmp/twoarg_append_rw_test';
+    my $mock = Test::MockFile->file( $append_file, "existing\n" );
+
+    # Two-arg open with +>> should open for append + read
+    ok( open( my $fh, "+>>$append_file" ), "Two-arg open with +>> succeeds" );
+    print $fh "appended\n";
+    seek $fh, 0, 0;
+    my @lines = <$fh>;
+    is_deeply( \@lines, [ "existing\n", "appended\n" ], "+>> mode: can read back after appending" );
+    close $fh;
+
+    # Verify three-arg equivalent works the same way
+    ok( open( my $fh2, '+>>', $append_file ), "Three-arg open with +>> also works" );
+    seek $fh2, 0, 0;
+    my @lines2 = <$fh2>;
+    is_deeply( \@lines2, [ "existing\n", "appended\n" ], "Three-arg +>> reads same content" );
+    close $fh2;
+}
+
 done_testing();
 exit;

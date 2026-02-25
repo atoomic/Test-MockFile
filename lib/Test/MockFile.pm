@@ -2014,8 +2014,8 @@ sub __open (*;$@) {
     # Normalize two-arg to three-arg
     if ( $arg_count == 2 ) {
 
-        # The order here matters, so '>>' won't turn into '>'
-        if ( $_[1] =~ /^ ( >> | [+]?> | [+]?< ) (.+) $/xms ) {
+        # The order here matters: try +>> and >> before +> and >
+        if ( $_[1] =~ /^ ( [+]?>> | [+]?> | [+]?< ) (.+) $/xms ) {
             $mode = $1;
             $file = $2;
         }
@@ -2241,8 +2241,6 @@ sub __opendir (*$) {
     # Upgrade but ignore bareword indicator
     ( undef, @_ ) = _upgrade_barewords(@_) if defined $_[0] && !ref $_[0];
 
-    my $mock_dir = _get_file_object( $_[1] );
-
     # 1 arg Opendir doesn't work??
     if ( scalar @_ != 2 or !defined $_[1] ) {
         _real_file_access_hook( "opendir", \@_ );
@@ -2251,6 +2249,21 @@ sub __opendir (*$) {
 
         return CORE::opendir( $_[0], @_[ 1 .. $#_ ] );
     }
+
+    # Follow symlinks — opendir resolves symlinks like stat
+    my $abs_path = _find_file_or_fh( $_[1], 1 );
+
+    if ( $abs_path eq BROKEN_SYMLINK ) {
+        $! = ENOENT;
+        return undef;
+    }
+
+    if ( $abs_path eq CIRCULAR_SYMLINK ) {
+        $! = ELOOP;
+        return undef;
+    }
+
+    my $mock_dir = $files_being_mocked{$abs_path};
 
     if ( !$mock_dir ) {
         _real_file_access_hook( "opendir", \@_ );

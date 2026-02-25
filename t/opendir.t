@@ -10,7 +10,7 @@ use Test2::Plugin::NoWarnings;
 use File::Temp qw/tempfile tempdir/;
 use File::Basename;
 
-use Errno qw/ENOENT EBADF ENOTDIR/;
+use Errno qw/ENOENT EBADF ENOTDIR ELOOP/;
 
 use Test::MockFile qw< nostrict >;    # Everything below this can have its open overridden.
 
@@ -171,6 +171,36 @@ note "-------------- BAREWORD GUARD REGRESSION --------------";
     is( [ readdir($dh) ],  ["aaa"], "readdir after seekdir(2) returns remaining entries" );
 
     is( closedir($dh), 1, "closedir with ref fh returns 1" );
+}
+
+# opendir should follow symlinks to directories
+{
+    my $real_dir  = Test::MockFile->dir('/symlinkdir_target');
+    my $file_in   = Test::MockFile->file( '/symlinkdir_target/inside.txt', 'data' );
+    my $dir_link  = Test::MockFile->symlink( '/symlinkdir_target', '/symlink_to_dir' );
+
+    ok( opendir( my $dh, '/symlink_to_dir' ), 'opendir follows symlink to directory' )
+        or diag "opendir through symlink failed: $!";
+    my @entries = readdir $dh;
+    closedir $dh;
+    is( [ sort @entries ], [qw< . .. inside.txt >], 'readdir through symlink returns correct contents' );
+}
+
+# opendir on a symlink to a non-existent target should fail with ENOENT
+{
+    my $broken_link = Test::MockFile->symlink( '/nonexistent_dir_target', '/broken_dir_symlink' );
+
+    ok( !opendir( my $dh, '/broken_dir_symlink' ), 'opendir on broken symlink fails' );
+    is( $! + 0, ENOENT, 'opendir on broken symlink sets ENOENT' );
+}
+
+# opendir on a circular symlink should fail with ELOOP
+{
+    my $loop_a = Test::MockFile->symlink( '/loopdir_b', '/loopdir_a' );
+    my $loop_b = Test::MockFile->symlink( '/loopdir_a', '/loopdir_b' );
+
+    ok( !opendir( my $dh, '/loopdir_a' ), 'opendir on circular symlink fails' );
+    is( $! + 0, ELOOP, 'opendir on circular symlink sets ELOOP' );
 }
 
 done_testing();
