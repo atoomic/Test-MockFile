@@ -2592,17 +2592,20 @@ sub __chown (@) {
         );
     }
 
-    # -1 means "keep as is"
-    $uid == -1 and $uid = $>;
-    $gid == -1 and $gid = $);
-
     my $is_root     = $> == 0 || $) =~ /( ^ | \s ) 0 ( \s | $)/xms;
-    my $is_in_group = grep /(^ | \s ) \Q$gid\E ( \s | $ )/xms, $);
 
-    # TODO: Perl has an odd behavior that -1, -1 on a file that isn't owned by you still works
-    # Not sure how to write a test for it though...
+    # Permission check for non-root: -1 means "keep as is" and always succeeds
+    if ( !$is_root ) {
+        if ( $uid != -1 && $> != $uid ) {
+            $! = EPERM;
+            return 0;
+        }
+        if ( $gid != -1 && !grep { /(^ | \s ) \Q$gid\E ( \s | $ )/xms } $) ) {
+            $! = EPERM;
+            return 0;
+        }
+    }
 
-    my $set_error;
     my $num_changed = 0;
     foreach my $file (@files) {
         my $mock = $mocked_files{$file};
@@ -2615,29 +2618,14 @@ sub __chown (@) {
             return CORE::chown( $uid, $gid, @files );
         }
 
-        # Even if you're root, nonexistent file is nonexistent
         if ( !$mock->exists() ) {
-
-            # Only set the error once
-            $set_error
-              or $! = ENOENT;
-
+            $! = ENOENT;
             next;
         }
 
-        # root can do anything, but you can't
-        # and if we are here, no point in keep trying
-        if ( !$is_root ) {
-            if ( $> != $uid || !$is_in_group ) {
-                $set_error
-                  or $! = EPERM;
-
-                last;
-            }
-        }
-
-        $mock->{'uid'} = $uid;
-        $mock->{'gid'} = $gid;
+        # -1 means "keep as is" — preserve the file's current value
+        $mock->{'uid'} = $uid == -1 ? $mock->{'uid'} : $uid;
+        $mock->{'gid'} = $gid == -1 ? $mock->{'gid'} : $gid;
 
         $num_changed++;
     }

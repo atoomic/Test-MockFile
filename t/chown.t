@@ -213,5 +213,56 @@ subtest(
     }
 );
 
+subtest(
+    'chown -1 preserves per-file uid/gid' => sub {
+        my $file_a = Test::MockFile->file( '/chown_a', 'data', { uid => $euid, gid => $egid } );
+        my $file_b = Test::MockFile->file( '/chown_b', 'data', { uid => $euid, gid => $egid } );
+
+        # Verify initial ownership
+        is( ( stat '/chown_a' )[4], $euid, 'file_a initial uid' );
+        is( ( stat '/chown_a' )[5], $egid, 'file_a initial gid' );
+        is( ( stat '/chown_b' )[4], $euid, 'file_b initial uid' );
+        is( ( stat '/chown_b' )[5], $egid, 'file_b initial gid' );
+
+        # chown(-1, -1) should preserve existing values, not replace with process identity
+        ok( chown( -1, -1, '/chown_a', '/chown_b' ), 'chown(-1, -1) succeeds' );
+
+        is( ( stat '/chown_a' )[4], $euid, 'file_a uid preserved after chown(-1, -1)' );
+        is( ( stat '/chown_a' )[5], $egid, 'file_a gid preserved after chown(-1, -1)' );
+        is( ( stat '/chown_b' )[4], $euid, 'file_b uid preserved after chown(-1, -1)' );
+        is( ( stat '/chown_b' )[5], $egid, 'file_b gid preserved after chown(-1, -1)' );
+    }
+);
+
+subtest(
+    'chown -1 uid preserves uid while changing gid' => sub {
+        my $file = Test::MockFile->file( '/chown_c', 'data', { uid => $euid, gid => $egid } );
+
+        is( ( stat '/chown_c' )[4], $euid, 'initial uid' );
+        is( ( stat '/chown_c' )[5], $egid, 'initial gid' );
+
+        # Only change gid, keep uid
+        ok( chown( -1, $egid, '/chown_c' ), 'chown(-1, gid) succeeds' );
+
+        is( ( stat '/chown_c' )[4], $euid, 'uid preserved when -1 passed' );
+        is( ( stat '/chown_c' )[5], $egid, 'gid set correctly' );
+    }
+);
+
+subtest(
+    'chown -1 gid preserves gid while changing uid' => sub {
+        my $file = Test::MockFile->file( '/chown_d', 'data', { uid => $euid, gid => $egid } );
+
+        is( ( stat '/chown_d' )[4], $euid, 'initial uid' );
+        is( ( stat '/chown_d' )[5], $egid, 'initial gid' );
+
+        # Only change uid, keep gid
+        ok( chown( $euid, -1, '/chown_d' ), 'chown(uid, -1) succeeds' );
+
+        is( ( stat '/chown_d' )[4], $euid, 'uid set correctly' );
+        is( ( stat '/chown_d' )[5], $egid, 'gid preserved when -1 passed' );
+    }
+);
+
 done_testing();
 exit;
