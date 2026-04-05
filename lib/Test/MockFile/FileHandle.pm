@@ -15,9 +15,11 @@ use Scalar::Util ();
 our $VERSION = '0.039';
 
 my $files_being_mocked;
+my $fh_to_path;
 {
     no warnings 'once';
     $files_being_mocked = \%Test::MockFile::files_being_mocked;
+    $fh_to_path         = \%Test::MockFile::_fh_to_path;
 }
 
 =head1 NAME
@@ -487,6 +489,11 @@ sub CLOSE {
         @{ $mock->{'fhs'} } = grep {
             defined $_ && ( !ref $_ || ( tied( *{$_} ) || 0 ) != $self )
         } @{ $mock->{'fhs'} };
+    }
+
+    # Remove from reverse fh-to-path lookup.
+    if ( my $fh_str = $self->{'_fh_string'} ) {
+        delete $fh_to_path->{$fh_str};
     }
 
     return 1;

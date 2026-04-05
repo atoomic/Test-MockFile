@@ -65,6 +65,10 @@ our $VERSION = '0.039';
 
 our %files_being_mocked;
 
+# Reverse lookup: stringified filehandle => absolute path.
+# Turns _fh_to_file from O(n) iteration to O(1) hash lookup.
+our %_fh_to_path;
+
 # Original Cwd functions saved before override
 my $_original_cwd_abs_path;
 
@@ -1846,26 +1850,8 @@ sub _fh_to_file {
 
     return unless defined $fh && length $fh;
 
-    # See if $fh is a file handle. It might be a path.
-    foreach my $path ( sort keys %files_being_mocked ) {
-        my $mock = $files_being_mocked{$path};
-
-        # Check file handles (multiple handles per file)
-        my $fhs = $mock->{'fhs'};
-        if ( $fhs && @{$fhs} ) {
-            @{$fhs} = grep { defined $_ } @{$fhs};
-            foreach my $mock_fh ( @{$fhs} ) {
-                return $path if "$mock_fh" eq "$fh";
-            }
-        }
-
-        # Check dir handle (stored as stringified handle)
-        if ( $mock->{'fh'} && $mock->{'fh'} eq "$fh" ) {
-            return $path;
-        }
-    }
-
-    return;
+    # O(1) reverse lookup instead of iterating all mocked files.
+    return $_fh_to_path{"$fh"};
 }
 
 sub _files_in_dir {
@@ -2067,6 +2053,14 @@ sub DESTROY {
     if ( $self->{'_autovivified_children'} ) {
         delete $self->{'_autovivified_children'};
     }
+
+    # Clean up reverse fh-to-path lookup entries for this mock's handles.
+    if ( my $fhs = $self->{'fhs'} ) {
+        for my $fh ( @{$fhs} ) {
+            delete $_fh_to_path{"$fh"} if defined $fh;
+        }
+    }
+    delete $_fh_to_path{ $self->{'fh'} } if $self->{'fh'};
 
     # If the object survives into global destruction, the object which is
     # the value of $files_being_mocked{$path} might destroy early.
@@ -2844,6 +2838,12 @@ sub _io_file_mock_open {
     $mock_file->{'fh'} = $fh;
     Scalar::Util::weaken( $mock_file->{'fh'} ) if ref $fh;
 
+    # Register in reverse lookup for O(1) _fh_to_file resolution.
+    $_fh_to_path{"$fh"} = $abs_path;
+    if ( ref $fh && tied( *{$fh} ) ) {
+        tied( *{$fh} )->{'_fh_string'} = "$fh";
+    }
+
     # Handle append/truncate modes
     if ( $mode eq '>>' or $mode eq '+>>' ) {
         $mock_file->{'contents'} //= '';
@@ -3205,6 +3205,12 @@ sub __open (*;$@) {
     push @{ $mock_file->{'fhs'} }, $_[0];
     Scalar::Util::weaken( $mock_file->{'fhs'}[-1] ) if ref $_[0];
 
+    # Register in reverse lookup for O(1) _fh_to_file resolution.
+    $_fh_to_path{"$_[0]"} = $mock_file->{'path'};
+    if ( ref $_[0] && tied( *{ $_[0] } ) ) {
+        tied( *{ $_[0] } )->{'_fh_string'} = "$_[0]";
+    }
+
     # Fix tell based on open options.
     # Track whether this open creates the file (transitions from non-existent).
     my $was_new = !defined $mock_file->{'contents'};
@@ -3401,6 +3407,12 @@ sub __sysopen (*$$;$) {
     push @{ $files_being_mocked{$abs_path}->{'fhs'} }, $_[0];
     Scalar::Util::weaken( $files_being_mocked{$abs_path}->{'fhs'}[-1] ) if ref $_[0];
 
+    # Register in reverse lookup for O(1) _fh_to_file resolution.
+    $_fh_to_path{"$_[0]"} = $abs_path;
+    if ( ref $_[0] && tied( *{ $_[0] } ) ) {
+        tied( *{ $_[0] } )->{'_fh_string'} = "$_[0]";
+    }
+
     # O_APPEND
     if ( $sysopen_mode & O_APPEND ) {
         seek $_[0], length $mock_file->{'contents'}, 0;
@@ -3479,6 +3491,9 @@ sub __opendir (*$) {
     # $abs_path already holds the resolved path from _find_file_or_fh above.
     $mock_dir->{'obj'} = Test::MockFile::DirHandle->new( $abs_path, $mock_dir->contents() );
     $mock_dir->{'fh'}  = "$_[0]";
+
+    # Register in reverse lookup for O(1) _fh_to_file resolution.
+    $_fh_to_path{"$_[0]"} = $abs_path;
 
     return 1;
 
