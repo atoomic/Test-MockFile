@@ -336,4 +336,39 @@ subtest 'open > on new file checks parent directory perms' => sub {
     } 1000, 1000;
 };
 
+# =========================================================================
+# sysopen O_CREAT — parent-dir permission check (GH #329)
+# Before the fix, the elsif branch checking parent-dir perms was dead code
+# in __sysopen, so sysopen(FH, '/restricted/new', O_WRONLY|O_CREAT) would
+# succeed even in a read-only parent directory.
+# =========================================================================
+
+subtest 'sysopen O_CREAT checks parent dir permissions' => sub {
+    my $parent = Test::MockFile->new_dir( '/perms/restricted', { mode => 0555, uid => 1000, gid => 1000 } );
+    my $child  = Test::MockFile->file('/perms/restricted/newfile');
+
+    with_user {
+        ok( !sysopen( my $fh, '/perms/restricted/newfile', O_WRONLY | O_CREAT ),
+            'sysopen O_CREAT fails in read-only parent dir' );
+        is( $! + 0, EACCES, 'sysopen errno is EACCES for restricted parent' );
+    } 2000, 2000;
+
+    # Owner also cannot create in a 0555 directory (no write bit for anyone)
+    with_user {
+        ok( !sysopen( my $fh, '/perms/restricted/newfile', O_WRONLY | O_CREAT ),
+            'sysopen O_CREAT fails for owner too when parent has no write bit' );
+        is( $! + 0, EACCES, 'sysopen errno is EACCES for owner too' );
+    } 1000, 1000;
+
+    # With write permission on parent, O_CREAT should succeed
+    my $parent2 = Test::MockFile->new_dir( '/perms/writable', { mode => 0755, uid => 1000, gid => 1000 } );
+    my $child2  = Test::MockFile->file('/perms/writable/newfile2');
+
+    with_user {
+        ok( sysopen( my $fh, '/perms/writable/newfile2', O_WRONLY | O_CREAT ),
+            'sysopen O_CREAT succeeds in writable parent dir' );
+        close $fh if $fh;
+    } 1000, 1000;
+};
+
 done_testing();
