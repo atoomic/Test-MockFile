@@ -71,6 +71,10 @@ my $_original_cwd_abs_path;
 # Tracks directories with autovivify enabled: path => mock object (weak ref)
 my %_autovivify_dirs;
 
+# Reverse index: parent_dir => { child_path => 1, ... }
+# Maintained alongside %files_being_mocked for O(children) directory lookups.
+my %_dir_children;
+
 # Auto-incrementing inode counter for unique inode assignment
 my $_next_inode = 1;
 
@@ -1336,10 +1340,7 @@ sub dir {
     # TODO: Add stat information
 
     # Only count children that actually exist (not non-existent placeholders)
-    my $has_content = grep {
-        my $m = $files_being_mocked{$_};
-        $m && $m->exists
-    } grep m{^\Q$path/\E}xms, keys %files_being_mocked;
+    my $has_content = grep { defined && $_->exists } _files_in_dir($path);
     my $self = $class->new(
         {
             'path'        => $path,
@@ -1547,6 +1548,7 @@ sub new {
 
     $files_being_mocked{$path} = $self;
     Scalar::Util::weaken( $files_being_mocked{$path} );
+    _register_dir_child($path);
 
     return $self;
 }
@@ -1791,6 +1793,7 @@ sub _create_file_through_broken_symlink {
 
     $files_being_mocked{$abs} = $mock;
     Scalar::Util::weaken( $files_being_mocked{$abs} );
+    _register_dir_child($abs);
 
     # The last symlink in the chain holds the strong ref
     my $symlink_mock = $files_being_mocked{$last_link_abs};
@@ -1873,12 +1876,32 @@ sub _files_in_dir {
 
     $dirname = _abs_path_to_file($dirname) if defined $dirname && $dirname !~ m{^/};
 
-    my @files_in_dir = @files_being_mocked{
-        grep m{^\Q$dirname/\E},
-        keys %files_being_mocked
-    };
+    my $children = $_dir_children{$dirname};
+    return unless $children;
 
-    return @files_in_dir;
+    return grep { defined } @files_being_mocked{ keys %{$children} };
+}
+
+# Register a path in the directory-children index under ALL ancestor directories.
+# e.g. /a/b/c/file registers under /a/b/c, /a/b, and /a.
+sub _register_dir_child {
+    my ($path) = @_;
+    my $dir = $path;
+    while ( $dir =~ s{/[^/]+$}{} && length $dir ) {
+        $_dir_children{$dir}{$path} = 1;
+        last if $dir eq '/';
+    }
+}
+
+# Unregister a path from the directory-children index.
+sub _unregister_dir_child {
+    my ($path) = @_;
+    my $dir = $path;
+    while ( $dir =~ s{/[^/]+$}{} && length $dir ) {
+        delete $_dir_children{$dir}{$path};
+        delete $_dir_children{$dir} unless %{ $_dir_children{$dir} };
+        last if $dir eq '/';
+    }
 }
 
 # Walk up the path to find the nearest ancestor directory with autovivify enabled.
@@ -1916,6 +1939,7 @@ sub _maybe_autovivify {
     # Store in global hash (weak ref, as usual)
     $files_being_mocked{$abs_path} = $mock;
     Scalar::Util::weaken( $files_being_mocked{$abs_path} );
+    _register_dir_child($abs_path);
 
     # Parent holds the strong ref so it stays alive until parent is destroyed
     $parent->{'_autovivified_children'} //= [];
@@ -2076,6 +2100,7 @@ sub DESTROY {
     }
 
     delete $files_being_mocked{$path};
+    _unregister_dir_child($path);
 }
 
 =head2 contents
@@ -4100,7 +4125,9 @@ sub __rename ($$) {
             ( my $new_key = $key ) =~ s{^\Q$old_prefix/\E}{$new_prefix/};
 
             delete $files_being_mocked{$key};
+            _unregister_dir_child($key);
             $files_being_mocked{$new_key} = $child;
+            _register_dir_child($new_key);
             $child->{'path'} = $new_key;
 
             # Update autovivify tracking for child directories
