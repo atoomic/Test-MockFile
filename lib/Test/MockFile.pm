@@ -74,6 +74,17 @@ my %_autovivify_dirs;
 # Auto-incrementing inode counter for unique inode assignment
 my $_next_inode = 1;
 
+# Open mode to read/write/append classification — replaces repeated grep lookups
+# in __open and _io_file_mock_open with O(1) hash access.
+my %_OPEN_MODE_RW = (
+    '<'   => 'r',
+    '>'   => 'w',
+    '>>'  => 'wa',
+    '+<'  => 'rw',
+    '+>'  => 'rw',
+    '+>>' => 'rwa',
+);
+
 # From http://man7.org/linux/man-pages/man7/inode.7.html
 use constant S_IFMT    => 0170000;    # bit mask for the file type bit field
 use constant S_IFPERMS => 07777;      # bit mask for file perms.
@@ -2804,15 +2815,12 @@ sub _io_file_mock_open {
     my $contents = $mock_file->contents();
 
     # If contents is undef and reading, file doesn't exist
-    if ( !defined $contents && grep { $mode eq $_ } qw/< +</ ) {
+    if ( !defined $contents && ( $mode eq '<' || $mode eq '+<' ) ) {
         $! = ENOENT;
         return;
     }
 
-    my $rw = '';
-    $rw .= 'r' if grep { $_ eq $mode } qw/+< +> +>> </;
-    $rw .= 'w' if grep { $_ eq $mode } qw/+< +> +>> > >>/;
-    $rw .= 'a' if grep { $_ eq $mode } qw/>> +>>/;
+    my $rw = $_OPEN_MODE_RW{$mode} // '';
 
     # Permission check (GH #3)
     if ( defined $_mock_uid ) {
@@ -3075,7 +3083,7 @@ sub __open (*;$@) {
     if ( $abs_path eq BROKEN_SYMLINK ) {
         my $base_mode = $mode;
         $base_mode =~ s/:.+$//;    # strip encoding suffix for mode check
-        if ( grep { $base_mode eq $_ } qw/> >> +> +>>/ ) {
+        if ( ( $_OPEN_MODE_RW{$base_mode} // '' ) =~ /w/ ) {
             my $target = _create_file_through_broken_symlink($file);
             if ($target) {
                 $abs_path = $target;
@@ -3108,8 +3116,7 @@ sub __open (*;$@) {
     }
 
     # For now we're going to just strip off the binmode and hope for the best.
-    $mode =~ s/(:.+$)//;
-    my $encoding_mode = $1;
+    $mode =~ s/:.+$//;
 
     # Pipe modes (|- and -|) are not supported for mocked files.
     # Warn (or die in strict mode) so the user knows mock is being bypassed.
@@ -3127,7 +3134,7 @@ sub __open (*;$@) {
     # We don't yet support modes outside of > < >> +< +> +>>
     # We just pass through to open if we're not mocking the file right now.
     if (   ( $mode eq '|-' || $mode eq '-|' )
-        or !grep { $_ eq $mode } qw/> < >> +< +> +>>/
+        or !exists $_OPEN_MODE_RW{$mode}
         or !defined $mock_file ) {
         _real_file_access_hook( "open", \@_ );
         goto \&CORE::open if _goto_is_available();
@@ -3155,16 +3162,13 @@ sub __open (*;$@) {
     my $contents = $mock_file->contents();
 
     # If contents is undef, we act like the file isn't there.
-    if ( !defined $contents && grep { $mode eq $_ } qw/< +</ ) {
+    if ( !defined $contents && ( $mode eq '<' || $mode eq '+<' ) ) {
         $! = ENOENT;
         _maybe_throw_autodie( 'open', @_ );
         return undef;
     }
 
-    my $rw = '';
-    $rw .= 'r' if grep { $_ eq $mode } qw/+< +> +>> </;
-    $rw .= 'w' if grep { $_ eq $mode } qw/+< +> +>> > >>/;
-    $rw .= 'a' if grep { $_ eq $mode } qw/>> +>>/;
+    my $rw = $_OPEN_MODE_RW{$mode} // '';
 
     # Permission check (GH #3) — IO::File path must match __open
     if ( defined $_mock_uid ) {
