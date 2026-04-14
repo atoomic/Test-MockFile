@@ -13,18 +13,22 @@ use Test::MockFile qw< nostrict >;
 # "exist" (stat returns empty). Use new_dir() to create an existing directory,
 # or create a file with content inside it first.
 
-# Helper: sleep 1 second to ensure mtime changes are detectable.
-# Perl's time() has second-level granularity.
-sub wait_for_time_change {
-    sleep 1;
+# Instead of sleeping to detect mtime changes, we backdate the mock directory's
+# timestamps before each operation.  This makes the test instant and
+# deterministic regardless of system clock granularity.
+sub backdate_mock {
+    my ($mock) = @_;
+    my $past = time() - 100;
+    $mock->{'atime'} = $past;
+    $mock->{'mtime'} = $past;
+    $mock->{'ctime'} = $past;
 }
 
 subtest 'file creation updates parent dir mtime' => sub {
     my $dir = Test::MockFile->new_dir('/mtime_test1');
+    backdate_mock($dir);
     my $dir_mtime_before = ( stat '/mtime_test1' )[9];
     ok( defined $dir_mtime_before, 'directory has mtime' );
-
-    wait_for_time_change();
 
     my $file = Test::MockFile->file( '/mtime_test1/newfile.txt', 'content' );
     my $dir_mtime_after = ( stat '/mtime_test1' )[9];
@@ -33,9 +37,8 @@ subtest 'file creation updates parent dir mtime' => sub {
 
 subtest 'file creation without content does not update parent dir mtime' => sub {
     my $dir = Test::MockFile->new_dir('/mtime_test2');
+    backdate_mock($dir);
     my $dir_mtime_before = ( stat '/mtime_test2' )[9];
-
-    wait_for_time_change();
 
     # File with undef contents = non-existent file, no directory entry added
     my $file = Test::MockFile->file('/mtime_test2/ghost.txt');
@@ -48,11 +51,8 @@ subtest 'unlink updates parent dir mtime' => sub {
     my $dir  = Test::MockFile->new_dir('/mtime_test3');
     my $file = Test::MockFile->file( '/mtime_test3/doomed.txt', 'bye' );
 
-    wait_for_time_change();
-
+    backdate_mock($dir);
     my $dir_mtime_before = ( stat '/mtime_test3' )[9];
-
-    wait_for_time_change();
 
     unlink '/mtime_test3/doomed.txt';
     my $dir_mtime_after = ( stat '/mtime_test3' )[9];
@@ -63,11 +63,8 @@ subtest 'mkdir updates parent dir mtime' => sub {
     my $parent = Test::MockFile->new_dir('/mtime_test4');
     my $child  = Test::MockFile->dir('/mtime_test4/subdir');
 
-    wait_for_time_change();
-
+    backdate_mock($parent);
     my $parent_mtime_before = ( stat '/mtime_test4' )[9];
-
-    wait_for_time_change();
 
     mkdir '/mtime_test4/subdir';
     my $parent_mtime_after = ( stat '/mtime_test4' )[9];
@@ -79,11 +76,8 @@ subtest 'rmdir updates parent dir mtime' => sub {
     my $parent = Test::MockFile->new_dir('/mtime_test5');
     my $child  = Test::MockFile->new_dir('/mtime_test5/subdir');
 
-    wait_for_time_change();
-
+    backdate_mock($parent);
     my $parent_mtime_before = ( stat '/mtime_test5' )[9];
-
-    wait_for_time_change();
 
     rmdir '/mtime_test5/subdir';
     my $parent_mtime_after = ( stat '/mtime_test5' )[9];
@@ -95,11 +89,8 @@ subtest 'open for write creates file and updates parent dir mtime' => sub {
     my $dir  = Test::MockFile->new_dir('/mtime_test6');
     my $mock = Test::MockFile->file('/mtime_test6/new.txt');    # undef contents
 
-    wait_for_time_change();
-
+    backdate_mock($dir);
     my $dir_mtime_before = ( stat '/mtime_test6' )[9];
-
-    wait_for_time_change();
 
     open( my $fh, '>', '/mtime_test6/new.txt' ) or die "open: $!";
     print {$fh} "hello";
@@ -114,8 +105,7 @@ subtest 'open existing file for write does NOT update parent dir mtime' => sub {
     my $dir  = Test::MockFile->new_dir('/mtime_test7');
     my $mock = Test::MockFile->file( '/mtime_test7/exists.txt', 'old content' );
 
-    wait_for_time_change();
-
+    backdate_mock($dir);
     my $dir_mtime_before = ( stat '/mtime_test7' )[9];
 
     # Opening an existing file for write (truncate) should NOT update parent mtime
@@ -133,11 +123,8 @@ subtest 'symlink creation updates parent dir mtime' => sub {
     my $dir     = Test::MockFile->new_dir('/mtime_test8');
     my $target  = Test::MockFile->file( '/mtime_test8/target.txt', 'content' );
 
-    wait_for_time_change();
-
+    backdate_mock($dir);
     my $dir_mtime_before = ( stat '/mtime_test8' )[9];
-
-    wait_for_time_change();
 
     my $link = Test::MockFile->symlink( '/mtime_test8/target.txt', '/mtime_test8/link.txt' );
     my $dir_mtime_after = ( stat '/mtime_test8' )[9];
@@ -147,10 +134,9 @@ subtest 'symlink creation updates parent dir mtime' => sub {
 
 subtest 'ctime also updates alongside mtime' => sub {
     my $dir = Test::MockFile->new_dir('/mtime_test9');
+    backdate_mock($dir);
     my $dir_ctime_before = ( stat '/mtime_test9' )[10];
     ok( defined $dir_ctime_before, 'directory has ctime' );
-
-    wait_for_time_change();
 
     my $file = Test::MockFile->file( '/mtime_test9/file.txt', 'data' );
     my $dir_ctime_after = ( stat '/mtime_test9' )[10];
