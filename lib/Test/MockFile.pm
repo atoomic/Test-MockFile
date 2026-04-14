@@ -1906,7 +1906,9 @@ sub _maybe_autovivify {
     return unless defined $abs_path && length $abs_path;
 
     # Already mocked? Nothing to do.
-    return $files_being_mocked{$abs_path} if $files_being_mocked{$abs_path};
+    if ( my $existing = $files_being_mocked{$abs_path} ) {
+        return $existing;
+    }
 
     my $parent = _find_autovivify_parent($abs_path) or return;
 
@@ -1936,19 +1938,7 @@ sub _abs_path_to_file {
     if ( $path =~ m{ ^(~ ([^/]+)? ) }xms ) {
         my $req_homedir = $1;
         my $username    = $2 || getpwuid($<);
-        my $pw_homedir;
-
-        # Reset iterator so we *definitely* start from the first one
-        # Then reset when done looping over pw entries
-        endpwent;
-        while ( my @pwdata = getpwent ) {
-            if ( $pwdata[0] eq $username ) {
-                $pw_homedir = $pwdata[7];
-                endpwent;
-                last;
-            }
-        }
-        endpwent;
+        my $pw_homedir = ( getpwnam($username) )[7];
 
         $pw_homedir
           or die;
