@@ -1689,8 +1689,15 @@ sub _create_file_through_broken_symlink {
 sub _find_file_or_fh {
     my ( $file_or_fh, $follow_link, $depth ) = @_;
 
-    # Find the file handle or fall back to just using the abs path of $file_or_fh
-    my $absolute_path_to_file = _fh_to_file($file_or_fh) // _abs_path_to_file($file_or_fh) // '';
+    # Fast path: only attempt the O(n) _fh_to_file scan when the argument
+    # could actually be a filehandle (a reference like IO::Handle / glob ref,
+    # or a bare glob like *FH).  Plain path strings skip straight to
+    # _abs_path_to_file, avoiding the sort+iterate over %files_being_mocked.
+    my $absolute_path_to_file;
+    if ( ref $file_or_fh || ref( \$file_or_fh ) eq 'GLOB' ) {
+        $absolute_path_to_file = _fh_to_file($file_or_fh);
+    }
+    $absolute_path_to_file //= _abs_path_to_file($file_or_fh) // '';
     $absolute_path_to_file ne '/'
       and $absolute_path_to_file =~ s{[/\\]$}{}xmsg;
 
@@ -1730,7 +1737,7 @@ sub _fh_to_file {
     return unless defined $fh && length $fh;
 
     # See if $fh is a file handle. It might be a path.
-    foreach my $path ( sort keys %files_being_mocked ) {
+    foreach my $path ( keys %files_being_mocked ) {
         my $mock = $files_being_mocked{$path};
 
         # Check file handles (multiple handles per file)
