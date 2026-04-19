@@ -4,14 +4,22 @@ use strict;
 use warnings;
 use Test::More;
 
-plan( skip_all => "Test::CheckManifest is broken - https://github.com/reneeb/Test-CheckManifest/issues/20" );
-
 unless ( $ENV{RELEASE_TESTING} ) {
     plan( skip_all => "Author tests not required for installation" );
 }
 
-my $min_tcm = 0.9;
-eval "use Test::CheckManifest $min_tcm";
-plan skip_all => "Test::CheckManifest $min_tcm required" if $@;
+# Use ExtUtils::Manifest (core module) instead of the broken Test::CheckManifest.
+# This catches files listed in MANIFEST that don't exist on disk (manicheck)
+# and files on disk that aren't listed in MANIFEST (filecheck).
 
-ok_manifest();
+use ExtUtils::Manifest qw( manicheck filecheck );
+
+my @missing = manicheck();
+is( scalar @missing, 0, "All files in MANIFEST exist on disk" )
+  or diag( "Missing from disk: $_" ) for @missing;
+
+my @extra = filecheck();
+is( scalar @extra, 0, "No extra files found outside MANIFEST" )
+  or diag( "Not in MANIFEST: $_" ) for @extra;
+
+done_testing();
