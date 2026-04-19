@@ -18,6 +18,7 @@ t/autodie_filesys.t
 t/autodie_sysopen.t
 t/autodie_sysopen_reverse.t
 t/autovivify.t
+t/binmode.t
 t/blocks.t
 t/chmod-chown-passthrough.t
 t/chmod-filetemp.t
@@ -38,6 +39,7 @@ t/filehandle_cleanup.t
 t/filehandle_weakref.t
 t/fileno.t
 t/flock.t
+t/fttext_ftbinary.t
 t/glob_real_files.t
 t/globbing.t
 t/goto_is_available.t
@@ -55,6 +57,8 @@ t/open.t
 t/open_broken_symlink_create.t
 t/open_dir_symlink.t
 t/open_edge_cases.t
+t/open_pipe_mode.t
+t/open_pipe_mode_strict.t
 t/open_return_undef.t
 t/open_strict.t
 t/open_two_arg_special_chars.t
@@ -70,6 +74,7 @@ t/print_separators.t
 t/read_write_helpers.t
 t/read_write_perms.t
 t/readline.t
+t/readline_line_number.t
 t/readline_modes.t
 t/readlink.t
 t/relative_paths.t

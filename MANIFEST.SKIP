@@ -11,6 +11,7 @@
 \.orig$
 \.gz$
 ^\.git
+^\.claude/
 ^benchmark/
 ^cover_db/
 ^blib/
