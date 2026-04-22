@@ -446,6 +446,17 @@ sub READ {
     my $buf_len      = length $_[1];
 
     $offset //= 0;
+
+    # Handle negative offsets (from end of buffer), matching WRITE behavior.
+    if ( $offset < 0 ) {
+        $offset = $buf_len + $offset;
+        if ( $offset < 0 ) {
+            CORE::warn(qq{Offset outside string at @{[ join ' line ', (caller)[1,2] ]}.\n});
+            $! = EINVAL;
+            return undef;
+        }
+    }
+
     if ( $offset > $buf_len ) {
         $_[1] .= "\0" x ( $offset - $buf_len );
     }

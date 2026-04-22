@@ -341,6 +341,64 @@ use Test::MockFile qw< nostrict >;
     is( length( $mock->contents ), 6, "total length is 6" );
 }
 
+# ============================================================
+# sysread negative offset edge cases
+# ============================================================
+
+{
+    note "--- sysread with valid negative offset places data from end of buffer ---";
+
+    my $mock = Test::MockFile->file( '/fake/sr_negoff', "XYZ" );
+    sysopen( my $fh, '/fake/sr_negoff', O_RDONLY ) or die;
+
+    my $buf = "abcde";
+    my $ret = sysread( $fh, $buf, 2, -3 );
+    is( $ret, 2, "sysread with negative offset returns 2" );
+
+    # Negative offset -3 on "abcde" (len 5) means position 2.
+    # Read 2 bytes ("XY") and place at position 2, truncating the rest.
+    is( $buf, "abXY", "buffer has prefix preserved and read data at negative offset" );
+
+    close $fh;
+}
+
+{
+    note "--- sysread with negative offset exceeding buffer warns and returns undef ---";
+
+    my $mock = Test::MockFile->file( '/fake/sr_negoff_oob', "data" );
+    sysopen( my $fh, '/fake/sr_negoff_oob', O_RDONLY ) or die;
+
+    my @warns;
+    local $SIG{__WARN__} = sub { push @warns, $_[0] };
+
+    my $buf = "ab";
+    $! = 0;
+    my $ret = sysread( $fh, $buf, 5, -10 );
+    ok( !defined $ret, "sysread with out-of-bounds negative offset returns undef" );
+    is( $! + 0, EINVAL, "errno is EINVAL for out-of-bounds negative offset" );
+    ok( @warns >= 1, "warning emitted for out-of-bounds negative offset" );
+    like( $warns[0], qr/Offset outside string/, "warning mentions offset outside string" );
+    is( $buf, "ab", "buffer unchanged after failed sysread" );
+
+    close $fh;
+}
+
+{
+    note "--- sysread with negative offset -1 reads into last byte position ---";
+
+    my $mock = Test::MockFile->file( '/fake/sr_negoff1', "Hello" );
+    sysopen( my $fh, '/fake/sr_negoff1', O_RDONLY ) or die;
+
+    my $buf = "abc";
+    my $ret = sysread( $fh, $buf, 3, -1 );
+    is( $ret, 3, "sysread with offset -1 returns 3" );
+
+    # offset -1 on "abc" (len 3) = position 2, read 3 bytes "Hel"
+    is( $buf, "abHel", "buffer preserves prefix, appends at offset -1" );
+
+    close $fh;
+}
+
 is( \%Test::MockFile::files_being_mocked, {}, "No mock files are in cache" );
 
 done_testing();
