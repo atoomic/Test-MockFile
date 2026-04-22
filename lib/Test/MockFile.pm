@@ -3731,7 +3731,7 @@ sub __readlink (_) {
 sub __symlink ($$) {
     my ( $oldname, $newname ) = @_;
 
-    if ( !defined $newname ) {
+    if ( !defined $oldname || !defined $newname ) {
         carp('Use of uninitialized value in symlink');
         $! = ENOENT;
         _maybe_throw_autodie( 'symlink', @_ );

@@ -105,6 +105,34 @@ note "-------------- symlink() builtin on mocked paths --------------";
     is( readlink('/mock/undeflink'), '/real_target', 'readlink returns new target' );
 }
 
+{
+    note "symlink() with undef target returns ENOENT and does not corrupt mock state";
+    my $mock = Test::MockFile->file('/mock/undef_target_link');
+
+    $! = 0;
+    my @warnings;
+    local $SIG{__WARN__} = sub { push @warnings, $_[0] };
+    my $result = symlink( undef, '/mock/undef_target_link' );
+    is( $result, 0,      'symlink() with undef target returns 0' );
+    is( $! + 0, ENOENT, '$! is ENOENT for undef target' );
+    ok( @warnings >= 1, 'warns about uninitialized value' );
+    ok( !-e '/mock/undef_target_link', 'mock is not corrupted — file still does not exist' );
+    ok( !-l '/mock/undef_target_link', 'mock was not converted to a symlink' );
+}
+
+{
+    note "symlink() with undef newname returns ENOENT";
+    my $mock = Test::MockFile->file('/mock/undef_newname');
+
+    $! = 0;
+    my @warnings;
+    local $SIG{__WARN__} = sub { push @warnings, $_[0] };
+    my $result = symlink( '/some/target', undef );
+    is( $result, 0,      'symlink() with undef newname returns 0' );
+    is( $! + 0, ENOENT, '$! is ENOENT for undef newname' );
+    ok( @warnings >= 1, 'warns about uninitialized value' );
+}
+
 note "-------------- link() builtin on mocked paths --------------";
 
 {
