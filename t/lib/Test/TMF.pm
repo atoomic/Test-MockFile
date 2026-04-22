@@ -18,14 +18,19 @@ use Fcntl qw/SEEK_CUR/;
 
 use Cwd 'abs_path';
 
+our $RUN_CMD_AVAILABLE;
 BEGIN {
-    # Test2::Harness::Util::IPC was deprecated in favor of Test2::Harness::IPC::Util
-    eval { require Test2::Harness::IPC::Util; Test2::Harness::IPC::Util->import('run_cmd'); 1 }
-      or eval { require Test2::Harness::Util::IPC; Test2::Harness::Util::IPC->import('run_cmd'); 1 }
-      or die "Cannot load Test2::Harness::IPC::Util or Test2::Harness::Util::IPC: $@";
+    # Test2::Harness::Util::IPC was deprecated in favor of Test2::Harness::IPC::Util.
+    # On some Perl versions (e.g. 5.20), neither module may compile successfully —
+    # the old one is a broken deprecation shim and the new one isn't installed.
+    $RUN_CMD_AVAILABLE =
+        eval { require Test2::Harness::IPC::Util; Test2::Harness::IPC::Util->import('run_cmd'); 1 }
+     || eval { require Test2::Harness::Util::IPC; Test2::Harness::Util::IPC->import('run_cmd'); 1 }
+     || 0;
 }
 
-use Exporter 'import';
+use Exporter ();
+our @ISA    = ('Exporter');
 our @EXPORT = qw{
 
   tmf_test_code
@@ -33,6 +38,15 @@ our @EXPORT = qw{
   t2_run_script
 
 };
+
+sub import {
+    my $class = shift;
+    unless ($RUN_CMD_AVAILABLE) {
+        require Test2::Tools::Basic;
+        Test2::Tools::Basic::plan( skip_all => "Test2::Harness IPC module not available (run_cmd)" );
+    }
+    $class->export_to_level( 1, $class, @_ );
+}
 
 our $TMP;    # directory
 
