@@ -15,11 +15,11 @@ unless ( $ENV{RELEASE_TESTING} ) {
 use ExtUtils::Manifest qw( manicheck filecheck );
 
 my @missing = manicheck();
-is( scalar @missing, 0, "All files in MANIFEST exist on disk" )
-  or diag( "Missing from disk: $_" ) for @missing;
+is( scalar @missing, 0, "All files in MANIFEST exist on disk" );
+diag( "Missing from disk: $_" ) for @missing;
 
 my @extra = filecheck();
-is( scalar @extra, 0, "No extra files found outside MANIFEST" )
-  or diag( "Not in MANIFEST: $_" ) for @extra;
+is( scalar @extra, 0, "No extra files found outside MANIFEST" );
+diag( "Not in MANIFEST: $_" ) for @extra;
 
 done_testing();
