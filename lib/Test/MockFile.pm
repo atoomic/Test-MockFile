@@ -2314,6 +2314,21 @@ sub unlink {
         return 0;
     }
 
+    # POSIX: open file descriptors survive unlink — the data persists until
+    # all handles are closed. Detach any open handles so they retain access
+    # to the file contents independently of this mock object.
+    if ( !$self->is_link && $self->{'fhs'} && @{ $self->{'fhs'} } ) {
+        my @live_fhs = grep { defined $_ } @{ $self->{'fhs'} };
+        if (@live_fhs) {
+            my $detached = { 'contents' => $self->{'contents'} };
+            for my $fh (@live_fhs) {
+                my $tied = tied( *{$fh} );
+                next unless $tied;
+                $tied->{'data'} = $detached;
+            }
+        }
+    }
+
     if ( $self->is_link ) {
         $self->{'readlink'} = undef;
     }
