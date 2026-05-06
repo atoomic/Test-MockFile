@@ -2840,18 +2840,39 @@ sub _io_file_mock_open {
     # Tie the existing IO::File glob directly (don't create a new one)
     tie *{$fh}, 'Test::MockFile::FileHandle', $abs_path, $rw;
 
-    # Track the handle
-    $mock_file->{'fh'} = $fh;
-    Scalar::Util::weaken( $mock_file->{'fh'} ) if ref $fh;
+    # Track the handle (use 'fhs' array like __open and __sysopen)
+    $mock_file->{'fhs'} //= [];
+    push @{ $mock_file->{'fhs'} }, $fh;
+    Scalar::Util::weaken( $mock_file->{'fhs'}[-1] ) if ref $fh;
 
-    # Handle append/truncate modes
+    # Handle append/truncate modes — mirror __open's timestamp logic.
+    my $was_new = !defined $mock_file->{'contents'};
+
     if ( $mode eq '>>' or $mode eq '+>>' ) {
         $mock_file->{'contents'} //= '';
         seek $fh, length( $mock_file->{'contents'} ), 0;
     }
     elsif ( $mode eq '>' or $mode eq '+>' ) {
         $mock_file->{'contents'} = '';
+
+        # Truncating an existing file updates mtime/ctime (like real truncate(2)).
+        if ( !$was_new ) {
+            my $now = time;
+            $mock_file->{'mtime'} = $now;
+            $mock_file->{'ctime'} = $now;
+        }
     }
+
+    # POSIX open(2): creating a new file sets atime, mtime, and ctime.
+    if ( $was_new && defined $mock_file->{'contents'} ) {
+        my $now = time;
+        $mock_file->{'atime'} = $now;
+        $mock_file->{'mtime'} = $now;
+        $mock_file->{'ctime'} = $now;
+    }
+
+    # Creating a new file in a directory updates the directory's mtime.
+    _update_parent_dir_times($abs_path) if $was_new && defined $mock_file->{'contents'};
 
     return 1;
 }
