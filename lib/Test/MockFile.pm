@@ -1836,7 +1836,16 @@ sub _find_file_or_fh {
         return CIRCULAR_SYMLINK;
     }
 
-    return _find_file_or_fh( $mock_object->readlink, 1, $depth );
+    my $target = $mock_object->readlink;
+
+    # POSIX: relative symlink targets are resolved relative to the directory
+    # containing the symlink, not the process's current working directory.
+    if ( defined $target && $target !~ m{^/} ) {
+        ( my $link_dir = $absolute_path_to_file ) =~ s{/[^/]+$}{};
+        $target = "$link_dir/$target";
+    }
+
+    return _find_file_or_fh( $target, 1, $depth );
 }
 
 # Tries to find $fh as a open file handle in one of the mocked files.

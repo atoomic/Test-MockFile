@@ -83,6 +83,7 @@ t/stat_timestamps.t
 t/strict-rules.t
 t/strict-rules_file-temp-example.t
 t/strict-rules_scalar.t
+t/relative_symlink.t
 t/symlink.t
 t/symlink_follow_ops.t
 t/symlink_link.t
