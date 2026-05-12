@@ -346,6 +346,7 @@ sub READLINE {
     if ( !$self->{'read'} ) {
         my $path = $self->{'file'} // 'unknown';
         CORE::warn("Filehandle $path opened only for output");
+        $! = EBADF;
         return;
     }
 
@@ -388,6 +389,7 @@ sub GETC {
     if ( !$self->{'read'} ) {
         my $path = $self->{'file'} // 'unknown';
         CORE::warn("Filehandle $path opened only for output");
+        $! = EBADF;
         return undef;
     }
 
@@ -656,6 +658,7 @@ sub SEEK {
     }
 
     if ( $new_pos < 0 ) {
+        $! = EINVAL;
         return 0;
     }
 

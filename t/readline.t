@@ -138,18 +138,22 @@ note "-------------- readline on write-only handle --------------";
     {
         my $warn_msg;
         local $SIG{__WARN__} = sub { $warn_msg = shift };
+        $! = 0;
         my $line = readline($wfh);
         ok( !defined $line, 'readline on write-only handle returns undef' );
         like( $warn_msg, qr{opened only for output}, 'readline on write-only handle warns' );
+        is( $! + 0, EBADF, 'readline on write-only handle sets $! to EBADF' );
     }
 
     # List context
     {
         my $warn_msg;
         local $SIG{__WARN__} = sub { $warn_msg = shift };
+        $! = 0;
         my @lines = <$wfh>;
         is( scalar @lines, 0, 'readline in list context on write-only handle returns empty list' );
         like( $warn_msg, qr{opened only for output}, 'readline list context on write-only handle warns' );
+        is( $! + 0, EBADF, 'readline list context on write-only handle sets $! to EBADF' );
     }
 
     close $wfh;
@@ -162,9 +166,11 @@ note "-------------- getc on write-only handle --------------";
 
     my $warn_msg;
     local $SIG{__WARN__} = sub { $warn_msg = shift };
+    $! = 0;
     my $ch = getc($wfh);
     ok( !defined $ch, 'getc on write-only handle returns undef' );
     like( $warn_msg, qr{opened only for output}, 'getc on write-only handle warns' );
+    is( $! + 0, EBADF, 'getc on write-only handle sets $! to EBADF' );
 
     close $wfh;
 }
