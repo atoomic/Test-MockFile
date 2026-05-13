@@ -90,6 +90,7 @@ t/sysopen.t
 t/sysopen_strict.t
 t/sysreadwrite_edge_cases.t
 t/Test-MockFile_file.t
+t/tied_handle_edge_cases.t
 t/touch.t
 t/trace.t
 t/truncate.t
