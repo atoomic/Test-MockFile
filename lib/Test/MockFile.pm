@@ -1929,6 +1929,9 @@ sub _abs_path_to_file {
 
     return unless defined $path;
 
+    # Protect caller's $! — internal calls (getcwd, getpwent) may clobber errno
+    local $!;
+
     # Tilde expansion must happen before making the path absolute
     # ~
     # ~/...
@@ -1985,7 +1988,8 @@ sub __cwd_abs_path {
 
     # Make absolute without collapsing .. (symlink-aware resolution does that)
     if ( $path !~ m{^/} ) {
-        $path = Cwd::getcwd() . "/$path";
+        my $cwd = do { local $!; Cwd::getcwd() };
+        $path = $cwd . "/$path";
     }
 
     my @remaining = grep { $_ ne '' && $_ ne '.' } split( m{/}, $path );
