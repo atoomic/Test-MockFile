@@ -20,5 +20,6 @@ on 'test' => sub {
     requires 'File::Temp'                => 0;
     requires 'File::Path'                => 0;
     requires 'File::Basename'            => 0;
-    requires 'Test2::Harness::Util::IPC' => 0;
+    # Test2::Harness::Util::IPC was renamed to Test2::Harness::IPC::Util.
+    # t/lib/Test/TMF.pm handles both at runtime and skips gracefully.
 };
