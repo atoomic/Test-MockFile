@@ -7,7 +7,7 @@ use Test2::Plugin::NoWarnings;
 
 use Fcntl qw( O_RDWR O_CREAT );
 use File::Temp ();
-use Errno qw( ENOENT EISDIR EINVAL );
+use Errno qw( ENOENT EISDIR EINVAL EACCES );
 
 # Create a real tempfile before loading Test::MockFile
 my $real_tempfile;
@@ -141,6 +141,39 @@ subtest 'truncate via append filehandle succeeds' => sub {
     is( $mock->contents(), 'some', 'contents shortened via append fh' );
 
     close $fh;
+};
+
+subtest 'truncate path — write permission denied with set_user' => sub {
+    my $mock = Test::MockFile->file( '/fake/noperm', 'secret data', { mode => 0444, uid => 99, gid => 99 } );
+    Test::MockFile->set_user( 1000, 1000 );
+
+    $! = 0;
+    my $ret = truncate( '/fake/noperm', 0 );
+    ok( !$ret, 'truncate returns false for read-only file' );
+    is( $! + 0, EACCES, '$! is EACCES' );
+    is( $mock->contents(), 'secret data', 'contents unchanged' );
+
+    Test::MockFile->clear_user();
+};
+
+subtest 'truncate path — write permission allowed with set_user' => sub {
+    my $mock = Test::MockFile->file( '/fake/writeable', 'some data', { mode => 0644, uid => 1000, gid => 1000 } );
+    Test::MockFile->set_user( 1000, 1000 );
+
+    ok( truncate( '/fake/writeable', 4 ), 'truncate succeeds for writable file' );
+    is( $mock->contents(), 'some', 'contents shortened' );
+
+    Test::MockFile->clear_user();
+};
+
+subtest 'truncate path — root bypasses write permission' => sub {
+    my $mock = Test::MockFile->file( '/fake/roottrunc', 'protected', { mode => 0000, uid => 99, gid => 99 } );
+    Test::MockFile->set_user( 0, 0 );
+
+    ok( truncate( '/fake/roottrunc', 4 ), 'root can truncate even mode 0000' );
+    is( $mock->contents(), 'prot', 'contents shortened by root' );
+
+    Test::MockFile->clear_user();
 };
 
 done_testing();

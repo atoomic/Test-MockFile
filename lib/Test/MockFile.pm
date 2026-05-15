@@ -4285,6 +4285,14 @@ sub __truncate ($$) {
         return 0;
     }
 
+    # POSIX truncate(2): path-based truncate requires write permission on the file.
+    # Filehandle-based truncate checks via the handle's write flag instead.
+    if ( !ref $file_or_fh && defined $_mock_uid && !_check_perms( $mock, 2 ) ) {
+        $! = EACCES;
+        _maybe_throw_autodie( 'truncate', @_ );
+        return 0;
+    }
+
     # When called with a filehandle, the handle must be open for writing.
     # POSIX ftruncate(2): EINVAL if fd is not open for writing.
     if ( ref $file_or_fh ) {
