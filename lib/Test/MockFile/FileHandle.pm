@@ -648,6 +648,7 @@ sub SEEK {
     }
 
     if ( $new_pos < 0 ) {
+        $! = EINVAL;
         return 0;
     }
 

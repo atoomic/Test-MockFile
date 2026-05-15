@@ -32,7 +32,9 @@ my $content = "ABCDEFGHIJ";
 
     is( sysseek( $fh, 11, SEEK_SET ), 11, "SEEK_SET beyond EOF succeeds (POSIX allows seeking past end)" );
 
+    $! = 0;
     is( sysseek( $fh, -1, SEEK_SET ), 0, "SEEK_SET to negative returns 0 (failure)" );
+    is( $! + 0, EINVAL, "SEEK_SET to negative sets \$! to EINVAL" );
 
     close $fh;
 }
@@ -56,7 +58,9 @@ my $content = "ABCDEFGHIJ";
     is( sysseek( $fh, 0, SEEK_CUR ), 6, "SEEK_CUR 0 returns current position (6)" );
 
     # Try to seek before start of file
+    $! = 0;
     is( sysseek( $fh, -100, SEEK_CUR ), 0, "SEEK_CUR before start of file returns 0" );
+    is( $! + 0, EINVAL, "SEEK_CUR before start sets \$! to EINVAL" );
 
     # Try to seek beyond EOF
     is( sysseek( $fh, 100, SEEK_CUR ), 106, "SEEK_CUR beyond EOF succeeds (position 6 + 100 = 106)" );
@@ -79,7 +83,9 @@ my $content = "ABCDEFGHIJ";
 
     is( sysseek( $fh, -10, SEEK_END ), "0 but true", "SEEK_END -10 gives position 0 ('0 but true')" );
 
+    $! = 0;
     is( sysseek( $fh, -11, SEEK_END ), 0, "SEEK_END before start returns 0 (failure)" );
+    is( $! + 0, EINVAL, "SEEK_END before start sets \$! to EINVAL" );
 
     is( sysseek( $fh, 1, SEEK_END ), 11, "SEEK_END +1 beyond file succeeds (10 + 1 = 11)" );
 
