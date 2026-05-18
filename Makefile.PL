@@ -22,7 +22,9 @@ WriteMakefile(
         'File::Slurper'             => 0,
         'File::Temp'                => 0,
         'File::Basename'            => 0,
-        'Test2::Harness::Util::IPC' => 0,
+        # Test2::Harness::Util::IPC was renamed to Test2::Harness::IPC::Util.
+        # t/lib/Test/TMF.pm handles both at runtime; tests skip gracefully
+        # when neither is available, so no hard dependency is needed.
         'Test::MockModule'          => 0,
     },
     PREREQ_PM => {
